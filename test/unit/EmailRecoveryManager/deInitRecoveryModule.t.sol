@@ -17,7 +17,7 @@ contract EmailRecoveryManager_deInitRecoveryModule_Test is UnitBase {
         acceptGuardian(accountSalt1);
         acceptGuardian(accountSalt2);
         vm.warp(12 seconds);
-        handleRecovery(recoveryModuleAddress, calldataHash, accountSalt1);
+        handleRecovery(recoveryModuleAddress, recoveryDataHash, accountSalt1);
 
         vm.prank(accountAddress);
         vm.expectRevert(IGuardianManager.RecoveryInProcess.selector);
@@ -27,6 +27,9 @@ contract EmailRecoveryManager_deInitRecoveryModule_Test is UnitBase {
     function test_DeInitRecoveryModule_Succeeds() public {
         acceptGuardian(accountSalt1);
         acceptGuardian(accountSalt2);
+
+        bool isActivated = emailRecoveryModule.isActivated(accountAddress);
+        assertTrue(isActivated);
 
         vm.prank(accountAddress);
         vm.expectEmit();
@@ -45,7 +48,7 @@ contract EmailRecoveryManager_deInitRecoveryModule_Test is UnitBase {
         assertEq(recoveryRequest.executeAfter, 0);
         assertEq(recoveryRequest.executeBefore, 0);
         assertEq(recoveryRequest.currentWeight, 0);
-        assertEq(recoveryRequest.calldataHash, "");
+        assertEq(recoveryRequest.recoveryDataHash, "");
 
         // assert that guardian storage has been cleared successfully for guardian 1
         GuardianStorage memory guardianStorage1 =
@@ -66,5 +69,8 @@ contract EmailRecoveryManager_deInitRecoveryModule_Test is UnitBase {
         assertEq(guardianConfig.totalWeight, 0);
         assertEq(guardianConfig.acceptedWeight, 0);
         assertEq(guardianConfig.threshold, 0);
+
+        isActivated = emailRecoveryModule.isActivated(accountAddress);
+        assertFalse(isActivated);
     }
 }

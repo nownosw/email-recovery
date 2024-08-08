@@ -104,6 +104,15 @@ abstract contract EmailRecoveryManager is
     }
 
     /**
+     * @notice Checks if the recovery is activated for a given account
+     * @param account The address of the account for which the activation status is being checked
+     * @return bool True if the recovery request is activated, false otherwise
+     */
+    function isActivated(address account) public view override returns (bool) {
+        return guardianConfigs[account].threshold > 0;
+    }
+
+    /**
      * @notice Returns a two-dimensional array of strings representing the subject templates for an
      * acceptance by a new guardian.
      * @dev This is retrieved from the associated subject handler. Developers can write their own
@@ -192,7 +201,7 @@ abstract contract EmailRecoveryManager is
         uint256 delay,
         uint256 expiry
     )
-        internal
+        public
     {
         address account = msg.sender;
 
@@ -273,6 +282,10 @@ abstract contract EmailRecoveryManager is
             revert RecoveryInProcess();
         }
 
+        if (!isActivated(account)) {
+            revert RecoveryIsNotActivated();
+        }
+
         // This check ensures GuardianStatus is correct and also implicitly that the
         // account in email is a valid account
         GuardianStorage memory guardianStorage = getGuardian(account, guardian);
@@ -313,6 +326,10 @@ abstract contract EmailRecoveryManager is
             templateIdx, subjectParams, address(this)
         );
 
+        if (!isActivated(account)) {
+            revert RecoveryIsNotActivated();
+        }
+
         GuardianConfig memory guardianConfig = guardianConfigs[account];
         if (guardianConfig.threshold > guardianConfig.acceptedWeight) {
             revert ThresholdExceedsAcceptedWeight(
@@ -328,21 +345,26 @@ abstract contract EmailRecoveryManager is
         }
 
         RecoveryRequest storage recoveryRequest = recoveryRequests[account];
+        bytes32 recoveryDataHash = IEmailRecoverySubjectHandler(subjectHandler)
+            .parseRecoveryDataHash(templateIdx, subjectParams);
+
+        if (recoveryRequest.recoveryDataHash == bytes32(0)) {
+            recoveryRequest.recoveryDataHash = recoveryDataHash;
+        }
+
+        if (recoveryRequest.recoveryDataHash != recoveryDataHash) {
+            revert InvalidRecoveryDataHash(recoveryDataHash, recoveryRequest.recoveryDataHash);
+        }
 
         recoveryRequest.currentWeight += guardianStorage.weight;
 
         if (recoveryRequest.currentWeight >= guardianConfig.threshold) {
-            bytes32 calldataHash = IEmailRecoverySubjectHandler(subjectHandler)
-                .parseRecoveryCalldataHash(templateIdx, subjectParams);
-
             uint256 executeAfter = block.timestamp + recoveryConfigs[account].delay;
             uint256 executeBefore = block.timestamp + recoveryConfigs[account].expiry;
-
             recoveryRequest.executeAfter = executeAfter;
             recoveryRequest.executeBefore = executeBefore;
-            recoveryRequest.calldataHash = calldataHash;
 
-            emit RecoveryProcessed(account, guardian, executeAfter, executeBefore, calldataHash);
+            emit RecoveryProcessed(account, guardian, executeAfter, executeBefore, recoveryDataHash);
         }
     }
 
@@ -360,9 +382,13 @@ abstract contract EmailRecoveryManager is
      * deletes the recovery request but recovery config state is maintained so future recovery
      * requests can be made without having to reconfigure everything
      * @param account The address of the account for which the recovery is being completed
-     * @param recoveryCalldata The calldata that is passed to recover the validator
+     * @param recoveryData The data that is passed to recover the validator or account.
+     * recoveryData = abi.encode(validatorOrAccount, recoveryFunctionCalldata). Although, it is
+     * possible to design a recovery module using this manager without encoding the validator or
+     * account, depending on how the handler.parseRecoveryDataHash() and module.recover() functions
+     * are implemented
      */
-    function completeRecovery(address account, bytes calldata recoveryCalldata) external override {
+    function completeRecovery(address account, bytes calldata recoveryData) external override {
         if (account == address(0)) {
             revert InvalidAccountAddress();
         }
@@ -385,19 +411,19 @@ abstract contract EmailRecoveryManager is
             revert RecoveryRequestExpired(block.timestamp, recoveryRequest.executeBefore);
         }
 
-        bytes32 calldataHash = keccak256(recoveryCalldata);
-        if (calldataHash != recoveryRequest.calldataHash) {
-            revert InvalidCalldataHash(calldataHash, recoveryRequest.calldataHash);
+        bytes32 recoveryDataHash = keccak256(recoveryData);
+        if (recoveryDataHash != recoveryRequest.recoveryDataHash) {
+            revert InvalidRecoveryDataHash(recoveryDataHash, recoveryRequest.recoveryDataHash);
         }
 
         delete recoveryRequests[account];
 
-        recover(account, recoveryCalldata);
+        recover(account, recoveryData);
 
         emit RecoveryCompleted(account);
     }
 
-    function recover(address account, bytes calldata recoveryCalldata) internal virtual;
+    function recover(address account, bytes calldata recoveryData) internal virtual;
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                    CANCEL/DE-INIT LOGIC                    */

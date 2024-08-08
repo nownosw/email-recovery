@@ -15,13 +15,6 @@ contract UniversalEmailRecoveryModule_onUninstall_Test is UnitBase {
         super.setUp();
     }
 
-    // TODO: Assess
-    function test_OnUninstall_RevertWhen_InvalidValidatorsLength() public {
-        vm.prank(accountAddress);
-        instance.uninstallModule(MODULE_TYPE_EXECUTOR, recoveryModuleAddress, "");
-        vm.stopPrank();
-    }
-
     function test_OnUninstall_Succeeds() public {
         vm.prank(accountAddress);
         instance.uninstallModule(MODULE_TYPE_EXECUTOR, recoveryModuleAddress, "");
@@ -62,5 +55,8 @@ contract UniversalEmailRecoveryModule_onUninstall_Test is UnitBase {
         allowedSelectors = emailRecoveryModule.getAllowedSelectors(accountAddress);
         assertEq(allowedValidators.length, 0);
         assertEq(allowedSelectors.length, 0);
+
+        bool isActivated = emailRecoveryModule.isActivated(accountAddress);
+        assertFalse(isActivated);
     }
 }

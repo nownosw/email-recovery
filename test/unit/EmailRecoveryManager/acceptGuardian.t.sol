@@ -29,7 +29,7 @@ contract EmailRecoveryManager_acceptGuardian_Test is UnitBase {
         acceptGuardian(accountSalt1);
         acceptGuardian(accountSalt2);
         vm.warp(12 seconds);
-        handleRecovery(recoveryModuleAddress, calldataHash, accountSalt1);
+        handleRecovery(recoveryModuleAddress, recoveryDataHash, accountSalt1);
 
         vm.expectRevert(IGuardianManager.RecoveryInProcess.selector);
         emailRecoveryModule.exposed_acceptGuardian(guardian1, templateIdx, subjectParams, nullifier);
@@ -40,13 +40,7 @@ contract EmailRecoveryManager_acceptGuardian_Test is UnitBase {
         instance.uninstallModule(MODULE_TYPE_EXECUTOR, recoveryModuleAddress, "");
         vm.stopPrank();
 
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IEmailRecoveryManager.InvalidGuardianStatus.selector,
-                uint256(GuardianStatus.NONE),
-                uint256(GuardianStatus.REQUESTED)
-            )
-        );
+        vm.expectRevert(IEmailRecoveryManager.RecoveryIsNotActivated.selector);
         emailRecoveryModule.exposed_acceptGuardian(guardian1, templateIdx, subjectParams, nullifier);
     }
 
